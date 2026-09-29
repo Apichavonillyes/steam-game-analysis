@@ -1,5 +1,7 @@
 # What Makes a Steam Game Successful?
 
+**[▶ Play the interactive dashboard](https://apichavonillyes.github.io/steam-game-analysis/)**: an arcade-style dashboard where a game controller filters the charts, plus a search for any game and a versus mode.
+
 I looked at the top 2,000 games on Steam to answer four business questions:
 
 1. Do cheaper games get better reviews?
@@ -46,8 +48,9 @@ python src/collect_data.py        # downloads data, about 1 hour
 python src/build_database.py      # builds data/steam.db
 python src/run_sql.py sql/analysis.sql
 python src/make_charts.py         # saves charts to charts/
+python src/export_dashboard_data.py  # updates the dashboard data in docs/
 ```
 
 ## Tools
 
-Python (pandas, requests), SQL (SQLite), matplotlib
+Python (pandas, requests), SQL (SQLite), matplotlib, HTML/CSS/JavaScript (dashboard with hand-drawn SVG charts)

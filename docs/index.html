@@ -1,0 +1,1340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steam Game Arcade</title>
+<meta name="description" content="An arcade-style interactive dashboard of the top 2,000 Steam games: price, reviews, genres, growth and launch timing.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+/* ---------- Theme tokens ---------- */
+:root {
+  color-scheme: dark;
+  --bg: #07071a;
+  --surface: #101128;
+  --surface-2: #181a3a;
+  --ink: #f4f4ff;
+  --ink-2: #b9bbe0;
+  --muted: #8a8dba;
+  --grid: #26284f;
+  --border: #3a3d78;
+  --accent: #ffe14d;       /* arcade yellow: chrome only, never data */
+  --accent-ink: #1a1400;
+  --series-1: #0f9fd4;     /* data: main series (validated with --series-2 for CVD) */
+  --series-2: #ec4f95;     /* data: second series (median) */
+  --track: #1b1d42;
+  --ctrl-body: #23254f;
+  --ctrl-shade: #171938;
+  --cart-body: #2a2c5c;
+  --glow: 0 0 14px rgba(15, 159, 212, 0.5);
+  --scan: rgba(0, 0, 0, 0.22);
+  --r-common: #a3a8b4; --r-rare: #4f9dff; --r-epic: #b86bff; --r-legendary: #ffa53a;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #efe9dc;
+  --surface: #fbf7ee;
+  --surface-2: #f1eadb;
+  --ink: #15142a;
+  --ink-2: #45435e;
+  --muted: #6f6c86;
+  --grid: #e2dbc9;
+  --border: #b9b09a;
+  --accent: #8a5a00;
+  --accent-ink: #ffffff;
+  --series-1: #0077a8;
+  --series-2: #c2185b;
+  --track: #e8e0cd;
+  --ctrl-body: #d9d2c2;
+  --ctrl-shade: #c4bca9;
+  --cart-body: #cfc7b5;
+  --glow: none;
+  --scan: rgba(0, 0, 0, 0.05);
+  --r-common: #6b7280; --r-rare: #1f6fd6; --r-epic: #8b3fd9; --r-legendary: #c96a00;
+}
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 130px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "VT323", ui-monospace, monospace;
+  font-size: 21px;
+  line-height: 1.3;
+  overflow-x: hidden;
+}
+body.crt::after {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, var(--scan) 2px 3px);
+}
+h1, h2, h3, .pixel { font-family: "Press Start 2P", ui-monospace, monospace; font-weight: 400; }
+a { color: var(--series-1); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Pixel frame used by every panel */
+.frame {
+  background: var(--surface);
+  border: 3px solid var(--border);
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--border);
+  margin: 6px;
+}
+.btn {
+  font-family: "Press Start 2P", monospace;
+  font-size: 11px;
+  background: var(--surface-2);
+  border: 3px solid var(--border);
+  padding: 9px 12px;
+  cursor: pointer;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--series-1); }
+.btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn:active { transform: translateY(2px); }
+
+/* ---------- Sticky HUD ---------- */
+.hud {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 3px solid var(--border);
+}
+.hud-top {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 8px 0;
+  font-family: "Press Start 2P", monospace; font-size: 10px;
+}
+.hud-top .brand { color: var(--accent); margin-right: auto; }
+.hud-stat { color: var(--ink-2); }
+.hud-stat b { color: var(--ink); font-weight: 400; }
+.hud-top .btn { font-size: 9px; padding: 6px 8px; }
+.filterbar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  padding: 0 0 8px;
+  font-size: 18px;
+}
+.chip {
+  border: 2px solid var(--border); background: var(--surface);
+  padding: 1px 8px; cursor: pointer;
+}
+.chip[data-active="true"] { border-color: var(--series-1); color: var(--series-1); }
+.chip .k { color: var(--muted); }
+.filterbar .count { margin-left: auto; color: var(--ink-2); }
+
+/* ---------- Title screen ---------- */
+.title-screen { text-align: center; padding: 56px 0 36px; }
+.title-screen h1 { font-size: clamp(18px, 4.2vw, 40px); line-height: 1.45; margin: 18px 0 14px; text-shadow: 3px 3px 0 var(--border); }
+.title-screen h1 span { color: var(--accent); }
+.title-screen p { color: var(--ink-2); max-width: 640px; margin: 0 auto 22px; }
+.insert-coin { font-family: "Press Start 2P", monospace; font-size: 12px; color: var(--series-2); animation: blink 1.1s steps(2, start) infinite; }
+.press-start { font-size: 16px; padding: 16px 26px; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); margin-top: 18px; }
+.ticker { overflow: hidden; border-block: 2px solid var(--border); margin-top: 34px; padding: 6px 0; color: var(--ink-2); white-space: nowrap; }
+.ticker-inner { display: inline-block; padding-left: 100%; animation: ticker 70s linear infinite; }
+@keyframes blink { to { visibility: hidden; } }
+@keyframes ticker { to { transform: translateX(-100%); } }
+.trophy-art { width: 96px; height: 96px; image-rendering: pixelated; }
+
+/* ---------- Section headers ---------- */
+section.level { padding: 30px 0 8px; }
+.level-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.level-tag { font-family: "Press Start 2P", monospace; font-size: 11px; background: var(--accent); color: var(--accent-ink); padding: 6px 8px; }
+.level-head h2 { font-size: clamp(13px, 2vw, 18px); margin: 0; line-height: 1.5; }
+.level-head .tools { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.question { color: var(--ink-2); margin: 0 0 12px; }
+.result {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  margin: 14px 0 0; padding: 10px 12px; border: 2px dashed var(--border);
+}
+.result .pixel { font-size: 10px; color: var(--accent); }
+.panel { padding: 18px; }
+
+/* ---------- Stat tiles ---------- */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tile { padding: 14px; display: grid; grid-template-columns: 40px 1fr; gap: 4px 12px; align-items: center; }
+.tile svg { grid-row: span 2; width: 40px; height: 40px; }
+.tile .label { font-family: "Press Start 2P", monospace; font-size: 9px; color: var(--muted); }
+.tile .value { font-size: 34px; line-height: 1; overflow-wrap: anywhere; }
+.tile .sub { grid-column: 2; color: var(--ink-2); font-size: 17px; overflow-wrap: anywhere; }
+
+/* ---------- Controller ---------- */
+.ctrl-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: center; }
+.controller { width: 100%; height: auto; display: block; }
+.controller .body { fill: var(--ctrl-body); stroke: var(--border); stroke-width: 4; }
+.controller .shade { fill: var(--ctrl-shade); }
+.controller [role="button"] { cursor: pointer; outline: none; }
+.controller [role="button"] .cap { stroke: var(--bg); stroke-width: 3; transition: filter .1s; }
+.controller [role="button"]:hover .cap { filter: brightness(1.2); }
+.controller [role="button"]:focus-visible .cap { stroke: var(--accent); stroke-width: 5; }
+.controller [role="button"].pressed { transform: translateY(3px); }
+.controller [role="button"].pressed .cap { filter: brightness(1.5); }
+.controller text { font-family: "Press Start 2P", monospace; pointer-events: none; }
+.controller .dpad .cap { fill: #2c2e5a; }
+:root[data-theme="light"] .controller .dpad .cap { fill: #5a5670; }
+.controller .arrow { fill: var(--ink-2); pointer-events: none; }
+:root[data-theme="light"] .controller .arrow { fill: #f1eadb; }
+.lcd {
+  background: #0c1a12; color: #7dff9b;
+  border: 3px solid var(--border);
+  padding: 14px; font-size: 20px;
+  box-shadow: inset 0 0 18px rgba(0,0,0,.6);
+}
+:root[data-theme="light"] .lcd { background: #c8d6a0; color: #1d2a12; box-shadow: inset 0 0 12px rgba(0,0,0,.2); }
+.lcd-row { display: grid; grid-template-columns: 8.5em 1fr; gap: 8px; }
+.lcd-row .v { overflow-wrap: anywhere; }
+.lcd .games { margin-top: 8px; padding-top: 8px; border-top: 2px dashed currentColor; }
+.keymap { margin-top: 12px; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 18px; color: var(--ink-2); }
+kbd { font-family: "VT323", monospace; font-size: 18px; line-height: 1; border: 2px solid var(--border); padding: 3px 5px; background: var(--surface-2); color: var(--ink); white-space: nowrap; }
+
+/* ---------- Level 1: health bars ---------- */
+.hb-list { display: grid; gap: 10px; }
+.hb-row {
+  display: grid; grid-template-columns: 138px minmax(0, 1fr) 64px 92px; gap: 12px; align-items: center;
+  background: none; border: 2px solid transparent; padding: 6px 8px; cursor: pointer; text-align: left;
+}
+.hb-row:hover { border-color: var(--border); }
+.hb-row[aria-pressed="true"] { border-color: var(--accent); }
+.hb-row.dim { opacity: .38; }
+.hb-label { font-family: "Press Start 2P", monospace; font-size: 10px; display: flex; gap: 8px; align-items: center; }
+.hb-label svg { width: 16px; height: 16px; flex: none; }
+.hb-track { position: relative; height: 26px; background: var(--track); border: 3px solid var(--border); }
+.hb-fill { position: absolute; inset: 0 auto 0 0; background: var(--series-1); box-shadow: var(--glow); transition: width .45s steps(8); }
+.hb-track::after { /* 10 health segments = 10 points each */
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 3px), var(--track) calc(10% - 3px) 10%);
+}
+.hb-val { font-size: 26px; text-align: right; }
+.hb-n { color: var(--muted); font-size: 18px; }
+.hb-axis { display: grid; grid-template-columns: 138px minmax(0, 1fr) 64px 92px; gap: 12px; padding: 0 10px; color: var(--muted); font-size: 16px; }
+.hb-axis div:nth-child(2) { display: flex; justify-content: space-between; }
+.crown { color: var(--accent); }
+
+/* ---------- Level 2: cartridges ---------- */
+.slot-bay { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; border: 3px solid var(--border); background: var(--surface-2); }
+.slot-bay .slot-hole { flex: 1 1 200px; min-height: 34px; background: var(--bg); border: 3px inset var(--border); display: flex; align-items: center; padding: 0 10px; font-family: "Press Start 2P", monospace; font-size: 10px; color: var(--muted); }
+.slot-bay .slot-hole.full { color: var(--accent); }
+.carts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px 14px; }
+.cart {
+  position: relative; border: none; cursor: pointer; padding: 0 0 18px; text-align: left;
+  background: var(--cart-body);
+  clip-path: polygon(0 12px, 12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  transition: transform .15s;
+}
+.cart::before { /* grip ridges */
+  content: ""; display: block; height: 16px; margin: 0 22px;
+  background: repeating-linear-gradient(to bottom, var(--ctrl-shade) 0 2px, transparent 2px 5px);
+}
+.cart::after { /* contact pins */
+  content: ""; position: absolute; left: 16px; right: 16px; bottom: 4px; height: 8px;
+  background: repeating-linear-gradient(90deg, #c9a227 0 5px, transparent 5px 8px);
+}
+.cart .sticker { margin: 4px 10px 0; background: var(--surface); border: 2px solid var(--border); padding: 8px; }
+.cart .g-name { font-family: "Press Start 2P", monospace; font-size: 9px; line-height: 1.5; min-height: 2.9em; }
+.cart .g-val { font-size: 28px; line-height: 1; margin-top: 4px; }
+.cart .g-sub { color: var(--muted); font-size: 16px; }
+.mini-track { height: 10px; background: var(--track); margin-top: 6px; position: relative; }
+.mini-fill { position: absolute; inset: 0 auto 0 0; background: var(--series-1); transition: width .4s; }
+.cart:hover { transform: translateY(-3px); }
+.cart[aria-pressed="true"] { transform: translateY(-8px); background: var(--accent); }
+.cart[aria-pressed="true"] .sticker { border-color: var(--accent); }
+.cart.dim { opacity: .4; }
+.cart:disabled { opacity: .25; cursor: not-allowed; }
+
+/* ---------- Level 3: XP panels ---------- */
+.xp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.xp { border: 3px solid var(--border); background: var(--surface-2); padding: 10px 10px 4px; cursor: pointer; }
+.xp.sel { border-color: var(--accent); }
+.xp-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.xp-head .pixel { font-size: 10px; }
+.xp-head .peak { color: var(--muted); font-size: 16px; }
+.xp svg { display: block; width: 100%; height: 150px; overflow: visible; }
+.xp .line { fill: none; stroke: var(--series-1); stroke-width: 2.5; }
+.xp .area { fill: var(--series-1); opacity: .12; }
+.xp .gridline { stroke: var(--grid); stroke-width: 1; }
+.xp .tick { fill: var(--muted); font-family: "VT323", monospace; font-size: 15px; }
+.xp .fog { fill: url(#fogPattern); }
+.xp .fog-label { fill: var(--muted); font-family: "Press Start 2P", monospace; font-size: 7px; }
+.xp .cross { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.xp .dot { fill: var(--series-1); stroke: var(--surface-2); stroke-width: 2; }
+
+/* ---------- Level 4: inventory ---------- */
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; color: var(--ink-2); font-size: 18px; }
+.legend i { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -1px; }
+.inv { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; background: var(--surface-2); padding: 8px; border: 3px solid var(--border); }
+.inv-slot {
+  position: relative; background: var(--bg); border: 3px solid var(--border);
+  border-top-color: var(--ctrl-shade); border-left-color: var(--ctrl-shade);
+  height: 170px; padding: 6px; cursor: default; display: flex; flex-direction: column;
+}
+.inv-slot:hover, .inv-slot:focus-visible { border-color: var(--series-1); }
+.inv-slot .m { font-family: "Press Start 2P", monospace; font-size: 9px; }
+.inv-bars { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 2px; padding: 6px 0 20px; }
+.inv-bars div { width: 16px; transition: height .4s; }
+.inv-bars .avg { background: var(--series-1); }
+.inv-bars .med { background: var(--series-2); }
+.inv-slot .stack { position: absolute; right: 5px; bottom: 2px; font-size: 18px; color: var(--ink); text-shadow: 1px 1px 0 var(--bg); }
+.inv-slot .best { position: absolute; right: 6px; top: 4px; color: var(--accent); font-size: 18px; }
+
+/* ---------- Tables ---------- */
+.data-table { margin-top: 14px; overflow-x: auto; }
+.data-table table { border-collapse: collapse; width: 100%; font-size: 18px; }
+.data-table th, .data-table td { border-bottom: 1px solid var(--grid); padding: 4px 8px; text-align: right; font-variant-numeric: tabular-nums; }
+.data-table th:first-child, .data-table td:first-child { text-align: left; }
+.data-table th { font-family: "Press Start 2P", monospace; font-size: 8px; color: var(--muted); font-weight: 400; }
+
+/* ---------- Loot + versus ---------- */
+.two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+.search { position: relative; }
+.search input {
+  width: 100%; font: inherit; font-size: 22px; color: var(--ink);
+  background: var(--bg); border: 3px solid var(--border); padding: 8px 10px;
+}
+.search input:focus { outline: none; border-color: var(--accent); }
+.suggest { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; background: var(--surface); border: 3px solid var(--accent); border-top: none; margin: 0; padding: 0; list-style: none; max-height: 290px; overflow: auto; }
+.suggest li { padding: 5px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+.suggest li[aria-selected="true"], .suggest li:hover { background: var(--surface-2); color: var(--accent); }
+.suggest li small { color: var(--muted); font-size: 16px; white-space: nowrap; }
+.loot-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
+
+.card {
+  --rc: var(--r-common);
+  position: relative; border: 4px solid var(--rc); background: var(--surface-2);
+  padding: 16px; margin-top: 14px;
+  box-shadow: 0 0 0 3px var(--bg), 0 0 22px color-mix(in srgb, var(--rc) 45%, transparent);
+}
+.card[data-r="rare"] { --rc: var(--r-rare); }
+.card[data-r="epic"] { --rc: var(--r-epic); }
+.card[data-r="legendary"] { --rc: var(--r-legendary); }
+.card.flip { animation: flip .45s ease-out; }
+@keyframes flip { from { transform: perspective(600px) rotateY(80deg); opacity: .2; } }
+.rarity { font-family: "Press Start 2P", monospace; font-size: 9px; background: var(--rc); color: #111; padding: 4px 6px; display: inline-block; }
+.card h3 { font-size: 14px; line-height: 1.5; margin: 10px 0 2px; overflow-wrap: anywhere; }
+.card .dev { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.chips span { border: 2px solid var(--border); padding: 0 6px; font-size: 17px; }
+.statline { display: grid; grid-template-columns: 9em minmax(0, 1fr); gap: 4px 10px; align-items: center; }
+.statline dt { font-family: "Press Start 2P", monospace; font-size: 8px; color: var(--muted); }
+.statline dd { margin: 0; overflow-wrap: anywhere; }
+.statline .mini-track { margin-top: 0; height: 14px; display: inline-block; width: 60%; vertical-align: middle; margin-right: 8px; }
+.rarity-key { display: flex; gap: 12px; flex-wrap: wrap; font-size: 17px; color: var(--ink-2); margin-top: 12px; }
+.rarity-key b { font-weight: 400; }
+
+.vs-pickers { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: end; }
+.vs-badge { font-family: "Press Start 2P", monospace; font-size: 22px; color: var(--accent); padding-bottom: 10px; text-align: center; }
+.vs-name { font-family: "Press Start 2P", monospace; font-size: 10px; line-height: 1.5; margin-bottom: 6px; min-height: 3em; overflow-wrap: anywhere; }
+.vs-name.p1 { color: var(--series-1); } .vs-name.p2 { color: var(--series-2); text-align: right; }
+.vs-board { margin-top: 16px; display: grid; gap: 10px; }
+.vs-row { display: grid; grid-template-columns: minmax(0, 1fr) 7.5em minmax(0, 1fr); gap: 10px; align-items: center; }
+.vs-row .stat { text-align: center; font-family: "Press Start 2P", monospace; font-size: 8px; color: var(--muted); line-height: 1.6; }
+.vs-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.vs-side.left { flex-direction: row-reverse; }
+.vs-bar { height: 18px; min-width: 2px; transition: width .5s; }
+.vs-side.left .vs-bar { background: var(--series-1); }
+.vs-side.right .vs-bar { background: var(--series-2); }
+.vs-side .num { white-space: nowrap; font-size: 19px; }
+.vs-side .win { color: var(--accent); }
+.vs-score { text-align: center; margin-top: 14px; font-family: "Press Start 2P", monospace; font-size: 12px; line-height: 1.8; }
+
+/* ---------- Quests + achievements ---------- */
+.quests { display: grid; gap: 12px; }
+.quest { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 12px 14px; }
+.quest .check { width: 30px; height: 30px; border: 3px solid var(--accent); display: grid; place-items: center; color: var(--accent); font-family: "Press Start 2P", monospace; font-size: 12px; }
+.quest h3 { font-size: 11px; margin: 4px 0 6px; line-height: 1.5; }
+.quest p { margin: 0; color: var(--ink-2); }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.ach { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; padding: 10px; border: 3px solid var(--border); background: var(--surface); }
+.ach .ico { width: 40px; height: 40px; display: grid; place-items: center; font-size: 26px; background: var(--surface-2); border: 2px solid var(--border); }
+.ach b { font-family: "Press Start 2P", monospace; font-size: 8px; font-weight: 400; line-height: 1.6; display: block; }
+.ach small { color: var(--muted); font-size: 16px; }
+.ach.locked { opacity: .45; }
+.ach.locked .ico { filter: grayscale(1); }
+.ach.unlocked { border-color: var(--accent); }
+
+.toast-box { position: fixed; right: 16px; bottom: 16px; z-index: 200; display: grid; gap: 8px; max-width: calc(100vw - 32px); }
+.toast { background: var(--surface); border: 3px solid var(--accent); padding: 10px 14px; box-shadow: 0 0 0 3px var(--bg), 0 0 20px rgba(255,225,77,.4); animation: toast-in .3s steps(4); }
+.toast .pixel { font-size: 8px; color: var(--accent); }
+@keyframes toast-in { from { transform: translateY(40px); opacity: 0; } }
+
+.tip {
+  position: fixed; z-index: 300; pointer-events: none;
+  background: var(--surface); border: 3px solid var(--accent);
+  padding: 8px 10px; font-size: 18px; max-width: 280px; line-height: 1.25;
+  box-shadow: 0 0 0 3px var(--bg); display: none;
+}
+.tip b { font-family: "Press Start 2P", monospace; font-size: 9px; font-weight: 400; display: block; margin-bottom: 4px; color: var(--accent); line-height: 1.5; }
+.tip .sw { display: inline-block; width: 10px; height: 10px; margin-right: 6px; }
+
+footer { padding: 40px 0 60px; color: var(--muted); text-align: center; font-size: 18px; }
+.konami-flash { animation: rainbow 1.6s linear; }
+@keyframes rainbow { 0%,100% { filter: none; } 25% { filter: hue-rotate(90deg); } 50% { filter: hue-rotate(180deg) invert(.1); } 75% { filter: hue-rotate(270deg); } }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ctrl-layout, .two-col { grid-template-columns: minmax(0, 1fr); }
+  .xp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inv { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  body { font-size: 19px; }
+  html { scroll-padding-top: 170px; }
+  .tiles { grid-template-columns: minmax(0, 1fr); }
+  .xp-grid { grid-template-columns: minmax(0, 1fr); }
+  .inv { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .hb-row, .hb-axis { grid-template-columns: 96px minmax(0, 1fr) 50px; }
+  .hb-n, .hb-axis div:nth-child(4) { display: none; }
+  .hb-label { font-size: 8px; }
+  .hb-label svg { display: none; }
+  .hb-val { font-size: 22px; }
+  .hud-top { font-size: 8px; gap: 8px; }
+  .hud-stat.opt { display: none; }
+  .panel { padding: 12px; }
+  .frame { margin: 6px 3px; }
+  .vs-row { grid-template-columns: minmax(0, 1fr) 5.5em minmax(0, 1fr); }
+  .vs-pickers { grid-template-columns: minmax(0, 1fr); }
+  .vs-badge { padding: 0; }
+  .vs-name.p2 { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+  .ticker-inner { padding-left: 0; }
+}
+</style>
+</head>
+<body class="crt">
+
+<!-- Shared SVG defs -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <pattern id="fogPattern" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="6" height="6" fill="var(--muted)" opacity="0.06"></rect>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="var(--muted)" stroke-width="1.2" opacity="0.35"></line>
+    </pattern>
+    <symbol id="i-heart" viewBox="0 0 8 7"><path fill="var(--series-2)" d="M1 0h2v1h2V0h2v1h1v3H7v1H6v1H5v1H3V6H2V5H1V4H0V1h1z"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 10 10"><path fill="var(--accent)" d="M2 0h6v1h2v3H9v1H8v1H6v2h2v2H2V8h2V6H2V5H1V4H0V1h2zM1 2v1h1V2zm7 0v1h1V2z"/></symbol>
+    <symbol id="i-gem" viewBox="0 0 10 10"><path fill="var(--series-1)" d="M3 0h4v1h1v1h1v1h1v2H9v1H8v1H7v1H6v1H4V8H3V7H2V6H1V5H0V3h1V2h1V1h1z"/></symbol>
+    <symbol id="i-coin" viewBox="0 0 10 10"><path fill="var(--accent)" d="M3 0h4v1h1v1h1v6H8v1H7v1H3V9H2V8H1V2h1V1h1z"/><path fill="var(--accent-ink)" opacity=".5" d="M4 2h2v6H4z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 10 10"><path fill="var(--series-2)" d="M4 0h2v3h4v2H8v1H7v4H6V8H4v2H3V6H2V5H0V3h4z"/></symbol>
+  </defs>
+</svg>
+
+<header class="hud">
+  <div class="wrap">
+    <div class="hud-top">
+      <span class="brand">1UP · STEAM ARCADE</span>
+      <span class="hud-stat opt">GAMES <b id="hudGames">0</b></span>
+      <span class="hud-stat">CREDITS <b id="hudCredits">0/10</b></span>
+      <button class="btn" id="soundBtn" aria-pressed="false" title="Sound effects">SND OFF</button>
+      <button class="btn" id="crtBtn" aria-pressed="true" title="CRT scanlines">CRT</button>
+      <button class="btn" id="themeBtn" title="Switch light or dark">☀ DAY</button>
+    </div>
+    <div class="filterbar" id="filterbar" aria-label="Active filters"></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- Title screen -->
+  <section class="title-screen" id="start">
+    <svg class="trophy-art" viewBox="0 0 10 10" aria-hidden="true"><use href="#i-trophy"/></svg>
+    <div class="insert-coin">INSERT COIN</div>
+    <h1>WHAT MAKES A<br><span>STEAM GAME</span> SUCCESSFUL?</h1>
+    <p>I collected data on the 2,000 most-owned games on Steam and asked four questions. Use the controller to filter everything on this page, search any game, and unlock achievements along the way.</p>
+    <button class="btn press-start" id="pressStart">▶ PRESS START</button>
+    <div class="ticker" aria-hidden="true"><div class="ticker-inner" id="ticker"></div></div>
+  </section>
+
+  <!-- Stat tiles -->
+  <section aria-label="Summary stats">
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <!-- Controller -->
+  <section class="level" id="controls">
+    <div class="level-head">
+      <span class="level-tag">P1</span>
+      <h2>CONTROLLER</h2>
+    </div>
+    <p class="question">Every button filters the whole dashboard. Click it, or use your keyboard.</p>
+    <div class="frame panel ctrl-layout">
+      <svg class="controller" viewBox="0 0 600 330" role="group" aria-label="Game controller filters">
+        <!-- bumpers -->
+        <g role="button" tabindex="0" data-btn="L" aria-label="L bumper: fewer minimum reviews">
+          <rect class="cap" x="100" y="34" width="130" height="36" rx="16" fill="#5d6190"/>
+          <text x="165" y="58" text-anchor="middle" font-size="13" fill="#fff">L -REV</text>
+        </g>
+        <g role="button" tabindex="0" data-btn="R" aria-label="R bumper: more minimum reviews">
+          <rect class="cap" x="370" y="34" width="130" height="36" rx="16" fill="#5d6190"/>
+          <text x="435" y="58" text-anchor="middle" font-size="13" fill="#fff">R +REV</text>
+        </g>
+        <!-- body -->
+        <path class="body" d="M150,64 C88,64 52,108 42,170 C28,252 40,312 96,316 C142,320 162,282 188,252 L412,252 C438,282 458,320 504,316 C560,312 572,252 558,170 C548,108 512,64 450,64 Z"/>
+        <path class="shade" d="M200,252 L400,252 C390,236 380,228 360,228 L240,228 C220,228 210,236 200,252 Z"/>
+        <text x="300" y="112" text-anchor="middle" font-size="11" fill="var(--muted)">SA-2000</text>
+        <!-- decorative sticks -->
+        <circle cx="228" cy="200" r="27" class="shade"/><circle cx="228" cy="200" r="17" fill="#2c2e5a"/>
+        <circle cx="372" cy="200" r="27" class="shade"/><circle cx="372" cy="200" r="17" fill="#2c2e5a"/>
+        <!-- d-pad -->
+        <g class="dpad">
+          <rect x="130" y="145" width="34" height="34" fill="#2c2e5a"/>
+          <g role="button" tabindex="0" data-btn="up" aria-label="D-pad up: next era">
+            <rect class="cap" x="130" y="106" width="34" height="40" rx="4"/><path class="arrow" d="M147,114 l9,12 h-18z"/>
+          </g>
+          <g role="button" tabindex="0" data-btn="down" aria-label="D-pad down: previous era">
+            <rect class="cap" x="130" y="178" width="34" height="40" rx="4"/><path class="arrow" d="M147,210 l9,-12 h-18z"/>
+          </g>
+          <g role="button" tabindex="0" data-btn="left" aria-label="D-pad left: previous price range">
+            <rect class="cap" x="91" y="145" width="40" height="34" rx="4"/><path class="arrow" d="M99,162 l12,-9 v18z"/>
+          </g>
+          <g role="button" tabindex="0" data-btn="right" aria-label="D-pad right: next price range">
+            <rect class="cap" x="163" y="145" width="40" height="34" rx="4"/><path class="arrow" d="M195,162 l-12,-9 v18z"/>
+          </g>
+        </g>
+        <!-- select / start -->
+        <g role="button" tabindex="0" data-btn="select" aria-label="Select: show or hide data tables">
+          <rect class="cap" x="252" y="146" width="40" height="15" rx="7" fill="#4a4d7e"/>
+          <text x="272" y="180" text-anchor="middle" font-size="8" fill="var(--muted)">SELECT</text>
+        </g>
+        <g role="button" tabindex="0" data-btn="start" aria-label="Start: reset all filters">
+          <rect class="cap" x="308" y="146" width="40" height="15" rx="7" fill="#4a4d7e"/>
+          <text x="328" y="180" text-anchor="middle" font-size="8" fill="var(--muted)">START</text>
+        </g>
+        <!-- face buttons -->
+        <g role="button" tabindex="0" data-btn="Y" aria-label="Y button: next genre cartridge">
+          <circle class="cap" cx="452" cy="122" r="20" fill="#3ccf6e"/><text x="452" y="128" text-anchor="middle" font-size="13" fill="#0b2a14">Y</text>
+        </g>
+        <g role="button" tabindex="0" data-btn="X" aria-label="X button: random loot drop">
+          <circle class="cap" cx="413" cy="161" r="20" fill="#3d8bff"/><text x="413" y="167" text-anchor="middle" font-size="13" fill="#061a3a">X</text>
+        </g>
+        <g role="button" tabindex="0" data-btn="B" aria-label="B button: eject genre cartridge">
+          <circle class="cap" cx="491" cy="161" r="20" fill="#ffd23f"/><text x="491" y="167" text-anchor="middle" font-size="13" fill="#3a2c00">B</text>
+        </g>
+        <g role="button" tabindex="0" data-btn="A" aria-label="A button: jump to next level">
+          <circle class="cap" cx="452" cy="200" r="20" fill="#ff4d5e"/><text x="452" y="206" text-anchor="middle" font-size="13" fill="#3a0008">A</text>
+        </g>
+      </svg>
+      <div>
+        <div class="lcd" id="lcd" aria-live="polite"></div>
+        <div class="keymap">
+          <span><kbd>←</kbd> <kbd>→</kbd></span><span>Price range</span>
+          <span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Release era</span>
+          <span><kbd>Q</kbd> <kbd>E</kbd></span><span>Min reviews (L / R)</span>
+          <span><kbd>Y</kbd> <kbd>B</kbd></span><span>Next genre / eject</span>
+          <span><kbd>X</kbd></span><span>Random loot drop</span>
+          <span><kbd>A</kbd></span><span>Jump to next level</span>
+          <span><kbd>T</kbd> <kbd>ENTER</kbd></span><span>Tables (Select) / reset (Start)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Level 1 -->
+  <section class="level" id="level1" data-level>
+    <div class="level-head">
+      <span class="level-tag">LEVEL 1</span>
+      <h2>DO CHEAPER GAMES GET BETTER REVIEWS?</h2>
+      <div class="tools"><button class="btn" data-table="t1" aria-pressed="false">TABLE</button></div>
+    </div>
+    <p class="question">Each health bar is the average share of positive reviews for games at that full price. One segment = 10 points. Click a bar to filter by that price.</p>
+    <div class="frame panel">
+      <div class="hb-list" id="hbList"></div>
+      <div class="hb-axis" aria-hidden="true"><div></div><div><span>0%</span><span>25</span><span>50</span><span>75</span><span>100%</span></div><div></div><div></div></div>
+      <div class="data-table" id="t1" hidden></div>
+      <div class="result"><span class="pixel">RESULT</span><span id="r1"></span></div>
+    </div>
+  </section>
+
+  <!-- Level 2 -->
+  <section class="level" id="level2" data-level>
+    <div class="level-head">
+      <span class="level-tag">LEVEL 2</span>
+      <h2>WHICH GENRES WIN?</h2>
+      <div class="tools" role="group" aria-label="Cartridge metric">
+        <button class="btn" data-metric="pct" aria-pressed="true">REVIEW %</button>
+        <button class="btn" data-metric="owners" aria-pressed="false">OWNERS</button>
+        <button class="btn" data-metric="count" aria-pressed="false">GAMES</button>
+        <button class="btn" data-table="t2" aria-pressed="false">TABLE</button>
+      </div>
+    </div>
+    <p class="question">Each cartridge is a genre. Click one to insert it and filter the whole dashboard. A game can have more than one genre.</p>
+    <div class="frame panel">
+      <div class="slot-bay">
+        <span class="pixel" style="font-size:10px">CONSOLE SLOT</span>
+        <div class="slot-hole" id="slotHole">EMPTY — INSERT A CARTRIDGE</div>
+        <button class="btn" id="ejectBtn">⏏ EJECT</button>
+      </div>
+      <div class="carts" id="carts"></div>
+      <div class="data-table" id="t2" hidden></div>
+      <div class="result"><span class="pixel">RESULT</span><span id="r2"></span></div>
+    </div>
+  </section>
+
+  <!-- Level 3 -->
+  <section class="level" id="level3" data-level>
+    <div class="level-head">
+      <span class="level-tag">LEVEL 3</span>
+      <h2>WHICH GENRES ARE GROWING?</h2>
+      <div class="tools"><button class="btn" data-table="t3" aria-pressed="false">TABLE</button></div>
+    </div>
+    <p class="question">Top games released each year, by genre. All panels share the same scale. Hover to see each year.</p>
+    <div class="frame panel">
+      <div class="xp-grid" id="xpGrid"></div>
+      <div class="data-table" id="t3" hidden></div>
+      <div class="result"><span class="pixel">WARNING</span><span>The striped “fog” area (2021–2025) isn't a real drop. Newer games haven't had time to collect owners, so fewer of them make the top 2,000. This data can't tell us which genres are growing.</span></div>
+    </div>
+  </section>
+
+  <!-- Level 4 -->
+  <section class="level" id="level4" data-level>
+    <div class="level-head">
+      <span class="level-tag">LEVEL 4</span>
+      <h2>IS THERE A BEST MONTH TO LAUNCH?</h2>
+      <div class="tools"><button class="btn" data-table="t4" aria-pressed="false">TABLE</button></div>
+    </div>
+    <p class="question">Each inventory slot is a release month. The number in the corner is how many games came out that month. Hover to see the month's biggest hit.</p>
+    <div class="frame panel">
+      <div class="legend"><span><i style="background:var(--series-1)"></i>Average owners</span><span><i style="background:var(--series-2)"></i>Median owners (the typical game)</span><span>★ = highest average</span></div>
+      <div class="inv" id="inv"></div>
+      <div class="data-table" id="t4" hidden></div>
+      <div class="result"><span class="pixel">RESULT</span><span id="r4"></span></div>
+    </div>
+  </section>
+
+  <!-- Loot lookup -->
+  <section class="level" id="loot">
+    <div class="level-head">
+      <span class="level-tag">BONUS</span>
+      <h2>LOOT CARD LOOKUP</h2>
+    </div>
+    <p class="question">Search any of the 1,997 games. Rarity is based on estimated owners.</p>
+    <div class="frame panel two-col">
+      <div>
+        <div class="search" id="lootSearch">
+          <label class="sr-only" for="lootInput">Search a game</label>
+          <input id="lootInput" type="text" placeholder="Search a game…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="lootList" aria-autocomplete="list">
+          <ul class="suggest" id="lootList" role="listbox" hidden></ul>
+        </div>
+        <div class="loot-actions">
+          <button class="btn" id="randomBtn">🎲 RANDOM DROP</button>
+          <button class="btn" id="toP1">SEND TO P1</button>
+          <button class="btn" id="toP2">SEND TO P2</button>
+        </div>
+        <div class="rarity-key">
+          <span><b style="color:var(--r-common)">■</b> Common: under 1M owners</span>
+          <span><b style="color:var(--r-rare)">■</b> Rare: 1M+</span>
+          <span><b style="color:var(--r-epic)">■</b> Epic: 5M+</span>
+          <span><b style="color:var(--r-legendary)">■</b> Legendary: 20M+</span>
+        </div>
+        <p class="question" id="rarityCounts" style="margin-top:10px"></p>
+      </div>
+      <div id="lootCard"></div>
+    </div>
+  </section>
+
+  <!-- Versus -->
+  <section class="level" id="versus">
+    <div class="level-head">
+      <span class="level-tag">BONUS</span>
+      <h2>VERSUS MODE</h2>
+    </div>
+    <p class="question">Pick two games and compare them stat by stat. The better stat gets a ★.</p>
+    <div class="frame panel">
+      <div class="vs-pickers">
+        <div>
+          <div class="vs-name p1" id="p1Name"></div>
+          <div class="search" id="p1Search">
+            <label class="sr-only" for="p1Input">Player 1 game</label>
+            <input id="p1Input" type="text" placeholder="Player 1 game…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="p1List" aria-autocomplete="list">
+            <ul class="suggest" id="p1List" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="vs-badge">VS</div>
+        <div>
+          <div class="vs-name p2" id="p2Name"></div>
+          <div class="search" id="p2Search">
+            <label class="sr-only" for="p2Input">Player 2 game</label>
+            <input id="p2Input" type="text" placeholder="Player 2 game…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="p2List" aria-autocomplete="list">
+            <ul class="suggest" id="p2List" role="listbox" hidden></ul>
+          </div>
+        </div>
+      </div>
+      <div class="vs-board" id="vsBoard"></div>
+      <div class="vs-score" id="vsScore" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- Quest log -->
+  <section class="level" id="quests">
+    <div class="level-head">
+      <span class="level-tag">QUEST LOG</span>
+      <h2>KEY FINDINGS</h2>
+    </div>
+    <div class="quests">
+      <div class="frame quest"><div class="check">✔</div><div><h3>PRICE VS. REVIEWS</h3><p>Games priced $10–19 had the best reviews, at 88% positive on average. Free games had the worst, at 77%. Above $20, reviews slowly got worse. Players seem to expect more from pricier games.</p></div></div>
+      <div class="frame quest"><div class="check">✔</div><div><h3>GENRES</h3><p>Indie games got the best reviews (87%). Massively multiplayer games got the worst (72%) but had the most owners, about 5.9 million on average. A game can be very popular and still get mixed reviews.</p></div></div>
+      <div class="frame quest"><div class="check">✔</div><div><h3>GROWTH</h3><p>This data can't answer it well. Every genre looks like it drops after 2020, but newer games just haven't had time to build up owners. I would need data on every game released each year.</p></div></div>
+      <div class="frame quest"><div class="check">✔</div><div><h3>LAUNCH MONTH</h3><p>Averages made February, November and August look best. But the typical game had 1–2 million owners in every month. A few huge hits, like Counter-Strike and Apex Legends, pushed the averages up.</p></div></div>
+      <div class="frame quest"><div class="check" style="color:var(--series-2);border-color:var(--series-2)">!</div><div><h3>ADVICE FOR A SMALL STUDIO</h3><p>Price the game around $10–19, and don't count on launch timing to make it a hit.</p></div></div>
+    </div>
+  </section>
+
+  <!-- Achievements -->
+  <section class="level" id="achievements">
+    <div class="level-head">
+      <span class="level-tag">TROPHIES</span>
+      <h2>ACHIEVEMENTS</h2>
+      <div class="tools"><button class="btn" id="resetAch">RESET</button></div>
+    </div>
+    <div class="ach-grid" id="achGrid"></div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Data from <a href="https://steamspy.com/api.php">SteamSpy</a> and the Steam store API, collected <span id="collected"></span>. Owner counts are estimates.</p>
+  <p>Built with Python, SQL and hand-drawn SVG · <a href="https://github.com/Apichavonillyes/steam-game-analysis">Code on GitHub</a></p>
+  <p>Not affiliated with Valve or Steam.</p>
+</footer>
+
+<div class="tip" id="tip" role="tooltip"></div>
+<div class="toast-box" id="toasts" aria-live="polite"></div>
+
+<script src="data.js"></script>
+<script>
+(() => {
+"use strict";
+
+/* ================= Data ================= */
+const RAW = window.STEAM_DATA;
+const col = Object.fromEntries(RAW.columns.map((c, i) => [c, i]));
+const GAMES = RAW.rows.map(r => {
+  const date = r[col.release_date];
+  return {
+    appid: r[col.appid], name: r[col.name], dev: r[col.developer] || "Unknown",
+    price: r[col.full_price_usd] ?? 0, pct: r[col.positive_pct], reviews: r[col.total_reviews],
+    oLow: r[col.owners_low], oHigh: r[col.owners_high], owners: (r[col.owners_low] + r[col.owners_high]) / 2,
+    date, year: date ? +date.slice(0, 4) : null, month: date ? +date.slice(5, 7) : null,
+    players: r[col.current_players], genres: r[col.genres] || [],
+  };
+});
+
+const PRICES = [
+  { id: "free", label: "FREE", test: p => p === 0 },
+  { id: "u10", label: "UNDER $10", test: p => p > 0 && p < 10 },
+  { id: "10-19", label: "$10–19", test: p => p >= 10 && p < 20 },
+  { id: "20-39", label: "$20–39", test: p => p >= 20 && p < 40 },
+  { id: "40+", label: "$40+", test: p => p >= 40 },
+];
+const ERAS = [
+  { id: "all", label: "ALL YEARS", test: () => true },
+  { id: "pre2015", label: "BEFORE 2015", test: y => y && y < 2015 },
+  { id: "2015-19", label: "2015–2019", test: y => y >= 2015 && y <= 2019 },
+  { id: "2020+", label: "2020+", test: y => y >= 2020 },
+];
+const REVIEW_STEPS = [0, 100, 500, 1000, 5000, 10000, 50000];
+const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+// Genres with 50+ games overall, most common first
+const genreCounts = {};
+GAMES.forEach(g => g.genres.forEach(x => genreCounts[x] = (genreCounts[x] || 0) + 1));
+const GENRES = Object.keys(genreCounts).filter(x => genreCounts[x] >= 50).sort((a, b) => genreCounts[b] - genreCounts[a]);
+
+/* ================= Helpers ================= */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtInt = n => Math.round(n).toLocaleString("en-US");
+const fmtM = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(Math.round(n));
+const fmtPct = n => n == null || isNaN(n) ? "—" : n.toFixed(0) + "%";
+const fmtPrice = p => p === 0 ? "FREE" : "$" + p.toFixed(2);
+const mean = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : NaN;
+const median = a => {
+  if (!a.length) return NaN;
+  const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const pcts = list => list.map(g => g.pct).filter(v => v != null);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("sga-" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("sga-" + k, JSON.stringify(v)); } catch {} },
+};
+const rarityOf = g => g.oLow >= 20e6 ? "legendary" : g.oLow >= 5e6 ? "epic" : g.oLow >= 1e6 ? "rare" : "common";
+
+/* ================= State + filtering ================= */
+const DEFAULTS = { price: null, era: "all", minReviews: 500, genre: null };
+const state = { ...DEFAULTS, metric: "pct", tables: false };
+
+// Everything passes through here. "except" skips one filter so a chart can
+// highlight its own selection instead of filtering itself away.
+function filtered(except) {
+  const price = PRICES.find(p => p.id === state.price);
+  const era = ERAS.find(e => e.id === state.era);
+  return GAMES.filter(g =>
+    (except === "price" || !price || price.test(g.price)) &&
+    (except === "era" || era.test(g.year)) &&
+    g.reviews >= state.minReviews &&
+    (except === "genre" || !state.genre || g.genres.includes(state.genre))
+  );
+}
+
+function setFilter(patch) {
+  Object.assign(state, patch);
+  renderAll();
+  unlock("filter");
+}
+
+/* ================= Sound ================= */
+let soundOn = false, actx = null;
+function beep(notes, dur = 0.07, type = "square") {
+  if (!soundOn) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = actx.currentTime;
+    notes.forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(0.05, t0 + i * dur);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + (i + 1) * dur);
+      o.connect(g).connect(actx.destination);
+      o.start(t0 + i * dur); o.stop(t0 + (i + 1) * dur);
+    });
+  } catch {}
+}
+const sfx = {
+  move: () => beep([440], 0.05),
+  select: () => beep([660, 880], 0.06),
+  back: () => beep([330, 220], 0.06),
+  unlock: () => beep([523, 659, 784, 1047], 0.08),
+  coin: () => beep([988, 1319], 0.08),
+};
+
+/* ================= Tooltip ================= */
+const tip = $("#tip");
+function showTip(html, x, y) {
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = x + 14, top = y + 14;
+  if (left + w > innerWidth - 8) left = x - w - 14;
+  if (top + h > innerHeight - 8) top = y - h - 14;
+  tip.style.left = Math.max(8, left) + "px";
+  tip.style.top = Math.max(8, top) + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+function bindTip(el, htmlFn) {
+  el.addEventListener("pointermove", e => showTip(htmlFn(), e.clientX, e.clientY));
+  el.addEventListener("pointerleave", hideTip);
+  el.addEventListener("focus", () => { const r = el.getBoundingClientRect(); showTip(htmlFn(), r.left + r.width / 2, r.bottom); });
+  el.addEventListener("blur", hideTip);
+}
+addEventListener("scroll", hideTip, { passive: true });
+
+/* ================= Achievements ================= */
+const ACH = [
+  { id: "start", icon: "🪙", name: "PRESS START", desc: "Pressed Start" },
+  { id: "filter", icon: "🎮", name: "BUTTON MASHER", desc: "Changed a filter" },
+  { id: "cart", icon: "💾", name: "BLOW ON IT", desc: "Inserted a genre cartridge" },
+  { id: "explorer", icon: "🗺️", name: "EXPLORER", desc: "Visited all 4 levels" },
+  { id: "table", icon: "📊", name: "DATA NERD", desc: "Opened a data table" },
+  { id: "loot5", icon: "🎒", name: "LOOT GOBLIN", desc: "Opened 5 loot cards" },
+  { id: "legendary", icon: "🌟", name: "LEGENDARY FIND", desc: "Found a Legendary game" },
+  { id: "versus", icon: "⚔️", name: "RIVALRY", desc: "Set up a Versus match" },
+  { id: "sound", icon: "🔊", name: "AUDIOPHILE", desc: "Turned the sound on" },
+  { id: "konami", icon: "👾", name: "???", desc: "Secret. Old-school gamers know.", secretName: "KONAMI CODE" },
+];
+let unlocked = new Set(store.get("ach", []));
+function unlock(id) {
+  if (unlocked.has(id)) return;
+  unlocked.add(id);
+  store.set("ach", [...unlocked]);
+  const a = ACH.find(x => x.id === id);
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.innerHTML = `<div class="pixel">ACHIEVEMENT UNLOCKED</div><div>${a.icon} ${esc(a.secretName || a.name)}</div>`;
+  $("#toasts").append(t);
+  setTimeout(() => t.remove(), 3200);
+  sfx.unlock();
+  renderAch();
+}
+function renderAch() {
+  $("#achGrid").innerHTML = ACH.map(a => {
+    const on = unlocked.has(a.id);
+    return `<div class="ach ${on ? "unlocked" : "locked"}"><div class="ico" aria-hidden="true">${on || !a.secretName ? a.icon : "?"}</div>
+      <div><b>${esc(on && a.secretName ? a.secretName : a.name)}</b><small>${on ? "Unlocked · " : "Locked · "}${esc(a.desc)}</small></div></div>`;
+  }).join("");
+  $("#hudCredits").textContent = `${unlocked.size}/${ACH.length}`;
+}
+
+/* ================= Filter bar + LCD ================= */
+function filterLabels() {
+  return {
+    price: state.price ? PRICES.find(p => p.id === state.price).label : "ALL",
+    era: ERAS.find(e => e.id === state.era).label,
+    reviews: state.minReviews ? fmtInt(state.minReviews) + "+" : "ANY",
+    genre: state.genre ? state.genre.toUpperCase() : "ALL",
+  };
+}
+function renderFilterBar(n) {
+  const L = filterLabels();
+  const chip = (k, key, val, active, clear) =>
+    `<button class="chip" data-clear='${JSON.stringify(clear)}' data-active="${active}" title="${active ? "Click to clear" : ""}"><span class="k">${k}</span> ${esc(val)}${active ? " ✕" : ""}</button>`;
+  $("#filterbar").innerHTML =
+    chip("PRICE", "price", L.price, !!state.price, { price: null }) +
+    chip("ERA", "era", L.era, state.era !== "all", { era: "all" }) +
+    chip("REVIEWS", "rev", L.reviews, state.minReviews !== DEFAULTS.minReviews, { minReviews: DEFAULTS.minReviews }) +
+    chip("GENRE", "genre", L.genre, !!state.genre, { genre: null }) +
+    `<span class="count">${fmtInt(n)} games in play</span>`;
+  $$("#filterbar .chip").forEach(c => c.addEventListener("click", () => {
+    if (c.dataset.active !== "true") return;
+    setFilter(JSON.parse(c.dataset.clear)); sfx.back();
+  }));
+  $("#lcd").innerHTML = `
+    <div class="lcd-row"><span>◀▶ PRICE</span><span class="v">${esc(L.price)}</span></div>
+    <div class="lcd-row"><span>▲▼ ERA</span><span class="v">${esc(L.era)}</span></div>
+    <div class="lcd-row"><span>L/R REVIEWS</span><span class="v">${esc(L.reviews)}</span></div>
+    <div class="lcd-row"><span>Y/B GENRE</span><span class="v">${esc(L.genre)}</span></div>
+    <div class="games">&gt; ${fmtInt(n)} GAMES IN PLAY_</div>`;
+  $("#hudGames").textContent = fmtInt(n);
+}
+
+/* ================= Stat tiles ================= */
+function renderTiles(list) {
+  const scored = list.filter(g => g.pct != null && g.reviews >= Math.max(state.minReviews, 1000));
+  const top = scored.reduce((b, g) => !b || g.pct > b.pct ? g : b, null);
+  const tiles = [
+    { icon: "i-coin", label: "GAMES IN PLAY", value: fmtInt(list.length), sub: `of ${fmtInt(GAMES.length)} total` },
+    { icon: "i-heart", label: "AVG REVIEW SCORE", value: fmtPct(mean(pcts(list))), sub: "positive reviews" },
+    { icon: "i-gem", label: "MEDIAN OWNERS", value: list.length ? fmtM(median(list.map(g => g.owners))) : "—", sub: "the typical game" },
+    { icon: "i-trophy", label: "HI-SCORE", value: top ? fmtPct(top.pct) : "—", sub: top ? top.name : "no games" },
+  ];
+  $("#tiles").innerHTML = tiles.map(t => `<div class="frame tile"><svg viewBox="0 0 10 10" aria-hidden="true"><use href="#${t.icon}"/></svg>
+    <div class="label">${t.label}</div><div class="value">${esc(t.value)}</div><div class="sub">${esc(t.sub)}</div></div>`).join("");
+}
+
+/* ================= Level 1: health bars ================= */
+function renderL1() {
+  const list = filtered("price");
+  const rows = PRICES.map(p => {
+    const gs = list.filter(g => p.test(g.price));
+    return { ...p, n: gs.length, avg: mean(pcts(gs)) };
+  });
+  const best = rows.filter(r => r.n).reduce((b, r) => !b || r.avg > b.avg ? r : b, null);
+  const box = $("#hbList");
+  box.innerHTML = "";
+  rows.forEach(r => {
+    const b = document.createElement("button");
+    b.className = "hb-row" + (state.price && state.price !== r.id ? " dim" : "");
+    b.setAttribute("aria-pressed", state.price === r.id);
+    b.setAttribute("aria-label", `${r.label}: ${fmtPct(r.avg)} positive, ${r.n} games`);
+    b.innerHTML = `<span class="hb-label"><svg viewBox="0 0 8 7" aria-hidden="true"><use href="#i-heart"/></svg>${r.label}</span>
+      <span class="hb-track"><span class="hb-fill" style="width:${r.n ? r.avg : 0}%"></span></span>
+      <span class="hb-val">${r.n ? fmtPct(r.avg) : "—"}${best && r.id === best.id ? ' <span class="crown" title="Best">★</span>' : ""}</span>
+      <span class="hb-n">${fmtInt(r.n)} games</span>`;
+    b.addEventListener("click", () => { setFilter({ price: state.price === r.id ? null : r.id }); sfx.select(); });
+    bindTip(b, () => `<b>${r.label}</b>${r.n ? `${fmtPct(r.avg)} positive on average<br>${fmtInt(r.n)} games` : "No games match the filters"}<br><small>Click to ${state.price === r.id ? "clear" : "filter"}</small>`);
+    box.append(b);
+  });
+  $("#r1").textContent = best
+    ? `Best price range: ${best.label} at ${fmtPct(best.avg)} positive. Free games: ${fmtPct(rows[0].avg)}.`
+    : "No games match these filters.";
+  $("#t1").innerHTML = table(["Price", "Games", "Avg positive %"], rows.map(r => [r.label, fmtInt(r.n), r.n ? r.avg.toFixed(1) : "—"]));
+}
+
+/* ================= Level 2: cartridges ================= */
+function renderL2() {
+  const list = filtered("genre");
+  const rows = GENRES.map(name => {
+    const gs = list.filter(g => g.genres.includes(name));
+    return { name, n: gs.length, pct: mean(pcts(gs)), owners: mean(gs.map(g => g.owners)), med: median(gs.map(g => g.owners)) };
+  });
+  const m = state.metric;
+  const val = r => m === "pct" ? r.pct : m === "owners" ? r.owners : r.n;
+  const fmt = r => !r.n ? "—" : m === "pct" ? fmtPct(r.pct) : m === "owners" ? fmtM(r.owners) : fmtInt(r.n);
+  const subOf = r => m === "count" ? `${fmtPct(r.pct)} positive` : `${fmtInt(r.n)} games`;
+  const max = m === "pct" ? 100 : Math.max(1, ...rows.map(r => val(r) || 0));
+  rows.sort((a, b) => (val(b) || -1) - (val(a) || -1));
+
+  const box = $("#carts");
+  box.innerHTML = "";
+  rows.forEach(r => {
+    const b = document.createElement("button");
+    b.className = "cart" + (state.genre && state.genre !== r.name ? " dim" : "");
+    b.disabled = !r.n;
+    b.setAttribute("aria-pressed", state.genre === r.name);
+    b.setAttribute("aria-label", `${r.name}: ${fmt(r)}, ${r.n} games`);
+    b.innerHTML = `<div class="sticker"><div class="g-name">${esc(r.name.toUpperCase())}</div>
+      <div class="g-val">${fmt(r)}</div><div class="g-sub">${subOf(r)}</div>
+      <div class="mini-track"><div class="mini-fill" style="width:${r.n ? (val(r) / max) * 100 : 0}%"></div></div></div>`;
+    b.addEventListener("click", () => {
+      const on = state.genre === r.name;
+      setFilter({ genre: on ? null : r.name });
+      on ? sfx.back() : (sfx.coin(), unlock("cart"));
+    });
+    bindTip(b, () => `<b>${esc(r.name)}</b>${fmtInt(r.n)} games<br>${fmtPct(r.pct)} positive<br>Avg owners: ${fmtM(r.owners || 0)}<br>Median owners: ${fmtM(r.med || 0)}`);
+    box.append(b);
+  });
+  const hole = $("#slotHole");
+  hole.textContent = state.genre ? `▶ ${state.genre.toUpperCase()} LOADED` : "EMPTY — INSERT A CARTRIDGE";
+  hole.classList.toggle("full", !!state.genre);
+
+  const scored = rows.filter(r => r.n >= 20);
+  const topRev = scored.reduce((b, r) => !b || r.pct > b.pct ? r : b, null);
+  const topOwn = scored.reduce((b, r) => !b || r.owners > b.owners ? r : b, null);
+  $("#r2").textContent = topRev
+    ? `Best reviewed: ${topRev.name} (${fmtPct(topRev.pct)}). Most owners on average: ${topOwn.name} (${fmtM(topOwn.owners)}).${topRev.name !== topOwn.name ? " Popular and well-liked aren't the same thing." : ""}`
+    : "Not enough games in these filters (needs 20+ per genre).";
+  $("#t2").innerHTML = table(["Genre", "Games", "Avg positive %", "Avg owners", "Median owners"],
+    rows.map(r => [r.name, fmtInt(r.n), r.n ? r.pct.toFixed(1) : "—", r.n ? fmtM(r.owners) : "—", r.n ? fmtM(r.med) : "—"]));
+}
+
+/* ================= Level 3: XP small multiples ================= */
+const YEARS = Array.from({ length: 16 }, (_, i) => 2010 + i); // 2010–2025
+const FOG_FROM = 2021;
+function renderL3() {
+  const list = filtered("genre");
+  let panels = GENRES.slice(0, 6);
+  if (state.genre && !panels.includes(state.genre)) panels = [state.genre, ...panels.slice(0, 5)];
+  const series = panels.map(name => {
+    const counts = YEARS.map(y => list.filter(g => g.year === y && g.genres.includes(name)).length);
+    return { name, counts };
+  });
+  const yMax = Math.max(5, ...series.flatMap(s => s.counts));
+  const grid = $("#xpGrid");
+  grid.innerHTML = "";
+  series.forEach(s => {
+    const peakI = s.counts.indexOf(Math.max(...s.counts));
+    const div = document.createElement("div");
+    div.className = "xp" + (state.genre === s.name ? " sel" : "");
+    div.innerHTML = `<div class="xp-head"><span class="pixel">${esc(s.name.toUpperCase())}</span>
+      <span class="peak">PEAK ${YEARS[peakI]} · ${s.counts[peakI]}</span></div><svg role="img" aria-label="${esc(s.name)} games released per year, 2010 to 2025"></svg>`;
+    grid.append(div);
+    drawXP(div.querySelector("svg"), s, yMax);
+    div.addEventListener("click", () => { setFilter({ genre: state.genre === s.name ? null : s.name }); sfx.select(); });
+  });
+  $("#t3").innerHTML = table(["Year", ...panels], YEARS.map((y, i) => [y, ...series.map(s => s.counts[i])]));
+}
+function drawXP(svg, s, yMax) {
+  const W = svg.clientWidth || 300, H = 150, P = { l: 26, r: 8, t: 10, b: 20 };
+  const x = i => P.l + (i / (YEARS.length - 1)) * (W - P.l - P.r);
+  const y = v => P.t + (1 - v / yMax) * (H - P.t - P.b);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const fogX = x(YEARS.indexOf(FOG_FROM)) - (x(1) - x(0)) / 2;
+  const pts = s.counts.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+  const ticks = [0, Math.round(yMax / 2), yMax];
+  svg.innerHTML = `
+    <rect class="fog" x="${fogX}" y="${P.t}" width="${W - P.r - fogX}" height="${H - P.t - P.b}"/>
+    <text class="fog-label" x="${W - P.r - 3}" y="${P.t + 10}" text-anchor="end">FOG</text>
+    ${ticks.map(t => `<line class="gridline" x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}"/><text class="tick" x="${P.l - 5}" y="${y(t) + 4}" text-anchor="end">${t}</text>`).join("")}
+    ${[2010, 2015, 2020, 2025].map(yr => `<text class="tick" x="${x(YEARS.indexOf(yr))}" y="${H - 3}" text-anchor="middle">${yr}</text>`).join("")}
+    <polygon class="area" points="${x(0)},${y(0)} ${pts} ${x(YEARS.length - 1)},${y(0)}"/>
+    <polyline class="line" points="${pts}"/>
+    <line class="cross" y1="${P.t}" y2="${H - P.b}" style="display:none"/>
+    <circle class="dot" r="5" style="display:none"/>
+    <rect x="${P.l}" y="0" width="${W - P.l - P.r}" height="${H}" fill="transparent"/>`;
+  const cross = svg.querySelector(".cross"), dot = svg.querySelector(".dot"), hit = svg.lastElementChild;
+  hit.addEventListener("pointermove", e => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.max(0, Math.min(YEARS.length - 1, Math.round(((e.clientX - r.left) * (W / r.width) - P.l) / (W - P.l - P.r) * (YEARS.length - 1))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.style.display = "";
+    dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(s.counts[i])); dot.style.display = "";
+    showTip(`<b>${esc(s.name)} · ${YEARS[i]}</b>${s.counts[i]} top games released${YEARS[i] >= FOG_FROM ? "<br><small>In the fog: still collecting owners</small>" : ""}`, e.clientX, e.clientY);
+  });
+  hit.addEventListener("pointerleave", () => { cross.style.display = "none"; dot.style.display = "none"; hideTip(); });
+}
+
+/* ================= Level 4: inventory ================= */
+function renderL4() {
+  const list = filtered();
+  const rows = MONTHS.map((label, i) => {
+    const gs = list.filter(g => g.month === i + 1);
+    const top = gs.reduce((b, g) => !b || g.owners > b.owners ? g : b, null);
+    return { label, n: gs.length, avg: mean(gs.map(g => g.owners)), med: median(gs.map(g => g.owners)), top };
+  });
+  const max = Math.max(1, ...rows.map(r => r.avg || 0));
+  const best = rows.filter(r => r.n).reduce((b, r) => !b || r.avg > b.avg ? r : b, null);
+  const inv = $("#inv");
+  inv.innerHTML = "";
+  rows.forEach(r => {
+    const d = document.createElement("div");
+    d.className = "inv-slot";
+    d.tabIndex = 0;
+    d.setAttribute("aria-label", `${r.label}: ${r.n} games, average ${fmtM(r.avg || 0)} owners, median ${fmtM(r.med || 0)}`);
+    d.innerHTML = `<span class="m">${r.label}</span>${best && r === best ? '<span class="best" aria-hidden="true">★</span>' : ""}
+      <div class="inv-bars"><div class="avg" style="height:${r.n ? (r.avg / max) * 100 : 0}%"></div><div class="med" style="height:${r.n ? (r.med / max) * 100 : 0}%"></div></div>
+      <span class="stack">×${r.n}</span>`;
+    bindTip(d, () => r.n
+      ? `<b>${r.label} · ${r.n} GAMES</b><span class="sw" style="background:var(--series-1)"></span>Average: ${fmtM(r.avg)} owners<br><span class="sw" style="background:var(--series-2)"></span>Median: ${fmtM(r.med)} owners<br>Boss drop: ${esc(r.top.name)} (${fmtM(r.top.owners)})`
+      : `<b>${r.label}</b>No games match the filters`);
+    inv.append(d);
+  });
+  const withGames = rows.filter(r => r.n >= 5);
+  if (withGames.length) {
+    const meds = withGames.map(r => r.med), avgs = withGames.map(r => r.avg);
+    const lo = Math.min(...meds), hi = Math.max(...meds);
+    $("#r4").textContent = `Averages swing from ${fmtM(Math.min(...avgs))} to ${fmtM(Math.max(...avgs))} owners, but the typical (median) game ` +
+      (lo === hi ? `has ${fmtM(lo)} owners in every month.` : `stays between ${fmtM(lo)} and ${fmtM(hi)}.`) +
+      ` A few huge hits drive the differences, so launch month matters less than it looks.`;
+  } else {
+    $("#r4").textContent = "Not enough games in these filters.";
+  }
+  $("#t4").innerHTML = table(["Month", "Games", "Avg owners", "Median owners", "Biggest hit"],
+    rows.map(r => [r.label, r.n, r.n ? fmtM(r.avg) : "—", r.n ? fmtM(r.med) : "—", r.top ? r.top.name : "—"]));
+}
+
+function table(head, rows) {
+  return `<table><thead><tr>${head.map(h => `<th scope="col">${esc(h)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+/* ================= Search box (used 3 times) ================= */
+function makeSearch(input, list, onPick) {
+  let items = [], active = -1;
+  const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
+  const draw = () => {
+    list.innerHTML = items.map((g, i) => `<li role="option" id="${list.id}-${i}" aria-selected="${i === active}" data-i="${i}">
+      <span>${esc(g.name)}</span><small>${fmtM(g.owners)} · ${fmtPct(g.pct)}</small></li>`).join("");
+    list.hidden = !items.length;
+    input.setAttribute("aria-expanded", String(!!items.length));
+    input.setAttribute("aria-activedescendant", active >= 0 ? `${list.id}-${active}` : "");
+  };
+  const pick = g => { input.value = ""; close(); onPick(g); sfx.select(); };
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { items = []; draw(); return; }
+    items = GAMES.filter(g => g.name.toLowerCase().includes(q))
+      .sort((a, b) => (b.name.toLowerCase().startsWith(q) - a.name.toLowerCase().startsWith(q)) || b.owners - a.owners)
+      .slice(0, 8);
+    active = items.length ? 0 : -1;
+    draw();
+  });
+  input.addEventListener("keydown", e => {
+    if (list.hidden) return;
+    if (e.key === "ArrowDown") { active = (active + 1) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { active = (active - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "Enter" && items[active]) { pick(items[active]); e.preventDefault(); }
+    else if (e.key === "Escape") close();
+  });
+  list.addEventListener("pointerdown", e => {
+    const li = e.target.closest("li");
+    if (li) { e.preventDefault(); pick(items[+li.dataset.i]); }
+  });
+  input.addEventListener("blur", () => setTimeout(close, 100));
+}
+
+/* ================= Loot card ================= */
+let lootGame = null, lootOpened = new Set();
+function showLoot(g, animate = true) {
+  lootGame = g;
+  const r = rarityOf(g);
+  const card = $("#lootCard");
+  card.innerHTML = `<div class="card${animate ? " flip" : ""}" data-r="${r}">
+    <span class="rarity">${r.toUpperCase()}</span>
+    <h3>${esc(g.name)}</h3><div class="dev">by ${esc(g.dev)}</div>
+    <div class="chips">${g.genres.map(x => `<span>${esc(x)}</span>`).join("") || "<span>No genre listed</span>"}</div>
+    <dl class="statline">
+      <dt>PRICE</dt><dd>${fmtPrice(g.price)}</dd>
+      <dt>REVIEWS</dt><dd><span class="mini-track"><span class="mini-fill" style="width:${g.pct || 0}%"></span></span>${fmtPct(g.pct)} positive</dd>
+      <dt>REVIEW COUNT</dt><dd>${fmtInt(g.reviews)}</dd>
+      <dt>OWNERS</dt><dd>${fmtM(g.oLow)}–${fmtM(g.oHigh)}</dd>
+      <dt>RELEASED</dt><dd>${g.date ? new Date(g.date + "T00:00").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "Unknown"}</dd>
+      <dt>PLAYERS NOW*</dt><dd>${fmtInt(g.players)}</dd>
+    </dl>
+    <p class="question" style="margin:10px 0 0;font-size:16px">*Players online when the data was collected. <a href="https://store.steampowered.com/app/${g.appid}" target="_blank" rel="noopener">Store page ↗</a></p>
+  </div>`;
+  if (animate) {
+    lootOpened.add(g.appid);
+    if (lootOpened.size >= 5) unlock("loot5");
+    if (r === "legendary") unlock("legendary");
+  }
+}
+function randomDrop() {
+  showLoot(GAMES[Math.floor(Math.random() * GAMES.length)]);
+  sfx.coin();
+  $("#loot").scrollIntoView({ block: "start" });
+}
+
+/* ================= Versus ================= */
+const vs = { p1: null, p2: null };
+const VS_STATS = [
+  { label: "REVIEW SCORE", get: g => g.pct ?? 0, fmt: fmtPct, better: "high" },
+  { label: "REVIEWS", get: g => g.reviews, fmt: fmtM, better: "high" },
+  { label: "OWNERS", get: g => g.owners, fmt: fmtM, better: "high" },
+  { label: "PLAYERS NOW", get: g => g.players, fmt: fmtM, better: "high" },
+  { label: "PRICE", get: g => g.price, fmt: fmtPrice, better: "low" },
+];
+function renderVersus() {
+  const { p1, p2 } = vs;
+  $("#p1Name").textContent = p1 ? p1.name : "PLAYER 1";
+  $("#p2Name").textContent = p2 ? p2.name : "PLAYER 2";
+  if (!p1 || !p2) { $("#vsBoard").innerHTML = ""; $("#vsScore").textContent = "PICK TWO GAMES"; return; }
+  let s1 = 0, s2 = 0;
+  $("#vsBoard").innerHTML = VS_STATS.map(st => {
+    const a = st.get(p1), b = st.get(p2), max = Math.max(a, b) || 1;
+    let w = 0;
+    if (a !== b) w = (st.better === "high" ? a > b : a < b) ? 1 : 2;
+    if (w === 1) s1++; if (w === 2) s2++;
+    return `<div class="vs-row">
+      <div class="vs-side left"><div class="vs-bar" style="width:${(a / max) * 100}%"></div><span class="num">${w === 1 ? '<span class="win">★</span> ' : ""}${st.fmt(a)}</span></div>
+      <div class="stat">${st.label}${st.better === "low" ? "<br>(LOWER WINS)" : ""}</div>
+      <div class="vs-side right"><div class="vs-bar" style="width:${(b / max) * 100}%"></div><span class="num">${st.fmt(b)}${w === 2 ? ' <span class="win">★</span>' : ""}</span></div>
+    </div>`;
+  }).join("");
+  $("#vsScore").innerHTML = s1 === s2 ? `DRAW ${s1}–${s2}` :
+    `${s1 > s2 ? "P1" : "P2"} WINS ${Math.max(s1, s2)}–${Math.min(s1, s2)}<br><span style="color:${s1 > s2 ? "var(--series-1)" : "var(--series-2)"}">${esc((s1 > s2 ? p1 : p2).name)}</span>`;
+}
+function setVs(slot, g) { vs[slot] = g; renderVersus(); unlock("versus"); }
+
+/* ================= Controller ================= */
+function cycle(arr, cur, dir) { const i = arr.indexOf(cur); return arr[(i + dir + arr.length) % arr.length]; }
+const ACTIONS = {
+  left: () => { setFilter({ price: cycle([null, ...PRICES.map(p => p.id)], state.price, -1) }); sfx.move(); },
+  right: () => { setFilter({ price: cycle([null, ...PRICES.map(p => p.id)], state.price, 1) }); sfx.move(); },
+  up: () => { setFilter({ era: cycle(ERAS.map(e => e.id), state.era, 1) }); sfx.move(); },
+  down: () => { setFilter({ era: cycle(ERAS.map(e => e.id), state.era, -1) }); sfx.move(); },
+  L: () => { const i = REVIEW_STEPS.indexOf(state.minReviews); if (i > 0) { setFilter({ minReviews: REVIEW_STEPS[i - 1] }); sfx.move(); } else sfx.back(); },
+  R: () => { const i = REVIEW_STEPS.indexOf(state.minReviews); if (i < REVIEW_STEPS.length - 1) { setFilter({ minReviews: REVIEW_STEPS[i + 1] }); sfx.move(); } else sfx.back(); },
+  Y: () => { setFilter({ genre: cycle([null, ...GENRES], state.genre, 1) }); sfx.coin(); if (state.genre) unlock("cart"); },
+  B: () => { if (state.genre) { setFilter({ genre: null }); } sfx.back(); },
+  X: () => randomDrop(),
+  A: () => {
+    const ids = ["level1", "level2", "level3", "level4", "loot", "versus", "quests", "achievements"];
+    const next = ids.map(id => document.getElementById(id)).find(el => el.getBoundingClientRect().top > 140);
+    (next || $("#start")).scrollIntoView({ block: "start" });
+    sfx.select();
+  },
+  select: () => { toggleTables(!state.tables); sfx.select(); },
+  start: () => { Object.assign(state, DEFAULTS); renderAll(); sfx.coin(); },
+};
+function press(name) {
+  const el = document.querySelector(`.controller [data-btn="${name}"]`);
+  if (el) { el.classList.add("pressed"); setTimeout(() => el.classList.remove("pressed"), 140); }
+  ACTIONS[name]();
+}
+$$(".controller [role=button]").forEach(el => {
+  el.addEventListener("click", () => press(el.dataset.btn));
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); press(el.dataset.btn); }
+  });
+});
+
+const KEYMAP = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", q: "L", e: "R", y: "Y", b: "B", x: "X", a: "A", t: "select", Enter: "start" };
+const KONAMI = ["ArrowUp","ArrowUp","ArrowDown","ArrowDown","ArrowLeft","ArrowRight","ArrowLeft","ArrowRight","b","a"];
+let konamiPos = 0;
+addEventListener("keydown", e => {
+  const t = e.target;
+  if (t.closest && t.closest("input, textarea, select")) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  konamiPos = key === KONAMI[konamiPos] ? konamiPos + 1 : (key === KONAMI[0] ? 1 : 0);
+  if (konamiPos === KONAMI.length) {
+    konamiPos = 0;
+    document.body.classList.remove("konami-flash"); void document.body.offsetWidth;
+    document.body.classList.add("konami-flash");
+    unlock("konami");
+    return;
+  }
+  // Let focused buttons and links keep their own Enter/Space behavior
+  if ((key === "Enter" || key === " ") && t.closest && t.closest("button, a, [role=button], [tabindex]")) return;
+  const btn = KEYMAP[key];
+  if (btn) { e.preventDefault(); press(btn); }
+});
+
+/* ================= Tables ================= */
+function toggleTables(on) {
+  state.tables = on;
+  $$("[data-table]").forEach(b => { b.setAttribute("aria-pressed", on); document.getElementById(b.dataset.table).hidden = !on; });
+  if (on) unlock("table");
+}
+$$("[data-table]").forEach(b => b.addEventListener("click", () => {
+  const box = document.getElementById(b.dataset.table);
+  box.hidden = !box.hidden;
+  b.setAttribute("aria-pressed", !box.hidden);
+  if (!box.hidden) unlock("table");
+  sfx.select();
+}));
+
+/* ================= Render everything ================= */
+function renderAll() {
+  const list = filtered();
+  renderFilterBar(list.length);
+  renderTiles(list);
+  renderL1(); renderL2(); renderL3(); renderL4();
+}
+
+/* ================= Wire up ================= */
+$$("[data-metric]").forEach(b => b.addEventListener("click", () => {
+  state.metric = b.dataset.metric;
+  $$("[data-metric]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  renderL2(); sfx.move();
+}));
+$("#ejectBtn").addEventListener("click", () => press("B"));
+$("#pressStart").addEventListener("click", () => { unlock("start"); sfx.coin(); $("#controls").scrollIntoView({ block: "start" }); });
+$("#randomBtn").addEventListener("click", randomDrop);
+$("#toP1").addEventListener("click", () => { if (lootGame) { setVs("p1", lootGame); sfx.select(); } });
+$("#toP2").addEventListener("click", () => { if (lootGame) { setVs("p2", lootGame); sfx.select(); } });
+$("#resetAch").addEventListener("click", () => { unlocked = new Set(); lootOpened = new Set(); store.set("ach", []); renderAch(); sfx.back(); });
+
+$("#soundBtn").addEventListener("click", e => {
+  soundOn = !soundOn;
+  e.currentTarget.setAttribute("aria-pressed", soundOn);
+  e.currentTarget.textContent = soundOn ? "SND ON" : "SND OFF";
+  if (soundOn) { sfx.coin(); unlock("sound"); }
+});
+function applyCrt(on) {
+  document.body.classList.toggle("crt", on);
+  $("#crtBtn").setAttribute("aria-pressed", on);
+  store.set("crt", on);
+}
+$("#crtBtn").addEventListener("click", () => applyCrt(!document.body.classList.contains("crt")));
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $("#themeBtn").textContent = t === "light" ? "☾ NIGHT" : "☀ DAY";
+  store.set("theme", t);
+}
+$("#themeBtn").addEventListener("click", () => { applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light"); sfx.move(); });
+
+makeSearch($("#lootInput"), $("#lootList"), g => showLoot(g));
+makeSearch($("#p1Input"), $("#p1List"), g => setVs("p1", g));
+makeSearch($("#p2Input"), $("#p2List"), g => setVs("p2", g));
+
+// Explorer achievement: see all four levels
+const seen = new Set();
+const io = new IntersectionObserver(entries => entries.forEach(en => {
+  if (en.isIntersecting) { seen.add(en.target.id); if (seen.size === 4) unlock("explorer"); }
+}), { threshold: 0.35 });
+$$("[data-level]").forEach(s => io.observe(s));
+
+// Redraw line charts when their width changes
+let lastW = 0;
+new ResizeObserver(() => { const w = $("#xpGrid").clientWidth; if (w !== lastW) { lastW = w; renderL3(); } }).observe($("#xpGrid"));
+
+// Title ticker: top 12 games by owners
+$("#ticker").textContent = "NOW PLAYING ▸ " + [...GAMES].sort((a, b) => b.owners - a.owners).slice(0, 12)
+  .map(g => `${g.name.toUpperCase()} (${fmtM(g.oLow)}+)`).join("  ✦  ");
+
+// Rarity counts
+const rc = { common: 0, rare: 0, epic: 0, legendary: 0 };
+GAMES.forEach(g => rc[rarityOf(g)]++);
+$("#rarityCounts").textContent = `In this data: ${fmtInt(rc.legendary)} Legendary, ${fmtInt(rc.epic)} Epic, ${fmtInt(rc.rare)} Rare and ${fmtInt(rc.common)} Common games.`;
+$("#collected").textContent = RAW.collected;
+
+applyTheme(store.get("theme", "dark"));
+applyCrt(store.get("crt", true));
+showLoot(GAMES[0], false);
+vs.p1 = GAMES[0]; vs.p2 = GAMES[1];
+renderVersus();
+renderAch();
+renderAll();
+})();
+</script>
+</body>
+</html>
