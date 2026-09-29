@@ -9,12 +9,12 @@ I looked at the top 2,000 games on Steam to answer four business questions:
 
 ## Key Findings
 
-*(Write these once the analysis is done. One or two sentences each, with a number.)*
+- **Price vs. reviews:** Games priced $10–19 had the best reviews, at 88% positive on average. Free games had the worst, at 77%. Above $20, reviews slowly got worse (85% for $20–39, 81% for $40+). Players seem to expect more from pricier games.
+- **Genres:** Indie games got the best reviews (87% positive). Massively multiplayer games got the worst (72%), but they had the most owners, about 5.9 million on average. A game can be very popular and still get mixed reviews.
+- **Growth:** This data can't answer this question well. Every genre looks like it drops after 2020, but that's because newer games haven't had time to build up enough owners to make the top 2,000. To answer it, I would need data on every game released each year, not just the biggest ones.
+- **Launch month:** At first, February, November and August looked best, at 4.6–5.0 million owners on average compared with 2.2 million for January. But the typical (median) game fell in the 1–2 million owner range in every month. The high averages came from a few huge hits, like Counter-Strike (August) and Apex Legends (November). For most games, launch month doesn't seem to matter much.
 
-- **Price vs. reviews:**
-- **Genres:**
-- **Growth:**
-- **Launch month:**
+**If I were advising a small studio:** Price the game around $10–19, and don't count on launch timing to make it a hit.
 
 ## How I Did It
 
